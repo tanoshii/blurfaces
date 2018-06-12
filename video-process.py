@@ -42,7 +42,7 @@ def detectFacesOpenCV(frame):
 
         # filter out weak detections by ensuring the `confidence` is
         # greater than the minimum confidence
-        if confidence < 0.3:
+        if confidence < 0.4:
             continue
 
         # compute the (x, y)-coordinates of the bounding box for the
@@ -52,8 +52,9 @@ def detectFacesOpenCV(frame):
 
     return boxes
 
-def getDetectionsInFrame(frame, number, queue, rekDetections):
-    if (len(queue) == 10):
+
+def getDetectionsInFrame(frame, number, queue, rekDetections, interval):
+    if (len(queue) == interval):
         queue.popleft()
     
     # Detections from OpenCV    
@@ -61,7 +62,7 @@ def getDetectionsInFrame(frame, number, queue, rekDetections):
     
     # Detections from Rekognition
     print 'Frame {}'.format(number)
-    if (rekDetections and rekDetections[0]['frame'] == number):
+    while(rekDetections and rekDetections[0]['frame'] <= number + interval / 2):
         detections = rekDetections.popleft()
         for face in detections['faces']:
             boxes.append(getBox(face))
@@ -69,11 +70,11 @@ def getDetectionsInFrame(frame, number, queue, rekDetections):
     queue.append(boxes)
 
 
-def applyBlur(filename):
+def applyBlur(filename, interval):
     results = getRekognitionDetections(filename) 
     rekDetections = deque(results)
     
-    capture = cv2.VideoCapture(filename)
+    capture = cv2.VideoCapture('input/{}'.format(filename))
     ret, frame = capture.read()
     
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
@@ -81,13 +82,14 @@ def applyBlur(filename):
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    out = cv2.VideoWriter('output.avi', fourcc, fps, (width, height))
+    out = cv2.VideoWriter('output/{}.avi'.format(filename), 
+        fourcc, fps, (width, height))
     queue = deque([])
 
 
     while (capture.isOpened() and ret):
         number = capture.get(cv2.CAP_PROP_POS_FRAMES) - 1
-        getDetectionsInFrame(frame, number, queue, rekDetections)
+        getDetectionsInFrame(frame, number, queue, rekDetections, interval)
         
         for boxes in queue:
             for (x1, y1, x2, y2) in boxes:
@@ -103,6 +105,12 @@ def applyBlur(filename):
     
     
 ap = argparse.ArgumentParser()
-ap.add_argument("-f", "--filename", required=True, help="video file name")
+ap.add_argument("-f", "--filename", required=True, 
+    help="video file name")
+ap.add_argument("-c", "--confidence", type=float, default=0.4,
+	help="minimum probability to filter weak detections")
+ap.add_argument("-i", "--interval", type=int, default=10, 
+    help="interval for fix detections")
+
 args = vars(ap.parse_args())
-applyBlur(args['filename'])
+applyBlur(args['filename'], args['interval'])
