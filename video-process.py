@@ -2,6 +2,7 @@ from collections import deque
 import boto3
 import cv2
 import numpy as np
+import argparse
 
 session = boto3.Session(profile_name='default')
 dynamodb = session.resource('dynamodb')
@@ -52,60 +53,40 @@ def detectFacesOpenCV(frame):
     return boxes
 
 def getDetectionsInFrame(frame, number, queue, rekDetections):
-    if (len(queue) == 6):
+    if (len(queue) == 10):
         queue.popleft()
     
     # Detections from OpenCV    
     boxes = detectFacesOpenCV(frame)
     
     # Detections from Rekognition
-    print rekDetections[0]['frame']
+    print 'Frame {}'.format(number)
     if (rekDetections and rekDetections[0]['frame'] == number):
         detections = rekDetections.popleft()
         for face in detections['faces']:
-            print getBox(face)
             boxes.append(getBox(face))
     
     queue.append(boxes)
 
-    
-def getInterval(results):  
-    a = results[0]['frame']
-    b = results[1]['frame']
-    interval = b - a
-    if (interval % 2 == 0):
-        interval = interval - 1
-    return interval
-    
-def getFaces(queue, interval, frameNumber):
-    if not queue:
-        return None
-        
-    frame = queue[0]['frame']
-    minFrame = int(frame - interval/2)
-    maxFrame = int(frame + interval/2)
-    if (frameNumber >= maxFrame):
-        return queue.popleft()['faces']
-    if (frameNumber >= minFrame):
-        return queue[0]['faces']
-    return None
 
 def applyBlur(filename):
     results = getRekognitionDetections(filename) 
-    #interval = getInterval(results)
     rekDetections = deque(results)
     
     capture = cv2.VideoCapture(filename)
     ret, frame = capture.read()
-
+    
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter('output.avi', fourcc, 30.0, (1280,720))
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    out = cv2.VideoWriter('output.avi', fourcc, fps, (width, height))
     queue = deque([])
 
 
     while (capture.isOpened() and ret):
         number = capture.get(cv2.CAP_PROP_POS_FRAMES) - 1
-        #faces = getFaces(queue, interval, frameNumber)
         getDetectionsInFrame(frame, number, queue, rekDetections)
         
         for boxes in queue:
@@ -120,5 +101,8 @@ def applyBlur(filename):
     out.release()
     cv2.destroyAllWindows()
     
-filename = 'hackathon.mp4'
-applyBlur(filename)
+    
+ap = argparse.ArgumentParser()
+ap.add_argument("-f", "--filename", required=True, help="video file name")
+args = vars(ap.parse_args())
+applyBlur(args['filename'])
